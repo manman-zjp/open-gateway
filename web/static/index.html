@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Gateway Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .sidebar-link.active { background-color: rgb(79, 70, 229); color: white; }
+    </style>
+</head>
+<body class="bg-gray-100" x-data="app()" x-init="init()">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-gray-900 text-white flex flex-col">
+            <div class="p-4 border-b border-gray-700">
+                <h1 class="text-xl font-bold flex items-center gap-2">
+                    <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    AI Gateway
+                </h1>
+                <p class="text-xs text-gray-400 mt-1" x-text="'v' + info.version"></p>
+            </div>
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#" @click.prevent="page='dashboard'" :class="{'active': page==='dashboard'}" class="sidebar-link flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-800 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                    Dashboard
+                </a>
+                <a href="#" @click.prevent="page='providers'; loadProviders()" :class="{'active': page==='providers'}" class="sidebar-link flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-800 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                    Providers
+                </a>
+                <a href="#" @click.prevent="page='models'; loadModels()" :class="{'active': page==='models'}" class="sidebar-link flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-800 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Models
+                </a>
+                <a href="#" @click.prevent="page='apikeys'; loadApiKeys()" :class="{'active': page==='apikeys'}" class="sidebar-link flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-800 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                    API Keys
+                </a>
+            </nav>
+            <div class="p-4 border-t border-gray-700">
+                <div class="flex items-center gap-2 text-sm text-gray-400">
+                    <span class="w-2 h-2 rounded-full" :class="health.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'"></span>
+                    <span x-text="health.status === 'healthy' ? 'System Healthy' : 'System Error'"></span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-auto">
+            <header class="bg-white shadow-sm border-b px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-gray-800" x-text="pageTitle"></h2>
+                    <div class="flex items-center gap-4">
+                        <button @click="refreshData()" class="p-2 hover:bg-gray-100 rounded-lg" title="刷新">
+                            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="p-6">
+                <!-- Dashboard -->
+                <div x-show="page === 'dashboard'" x-cloak>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500">总请求数</p><p class="text-2xl font-bold text-gray-800" x-text="stats.total_requests?.toLocaleString() || 0"></p></div>
+                                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center"><svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500">成功率</p><p class="text-2xl font-bold text-green-600" x-text="successRate + '%'"></p></div>
+                                <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center"><svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500">总 Token</p><p class="text-2xl font-bold text-gray-800" x-text="formatNumber(stats.total_tokens || 0)"></p></div>
+                                <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center"><svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between">
+                                <div><p class="text-sm text-gray-500">平均延迟</p><p class="text-2xl font-bold text-gray-800" x-text="formatLatency(stats.avg_latency)"></p></div>
+                                <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center"><svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white rounded-xl shadow-sm p-6"><h3 class="text-lg font-semibold mb-4">Token 分布</h3><canvas id="tokenChart" height="200"></canvas></div>
+                        <div class="bg-white rounded-xl shadow-sm p-6"><h3 class="text-lg font-semibold mb-4">请求状态</h3><canvas id="statusChart" height="200"></canvas></div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-6">
+                        <h3 class="text-lg font-semibold mb-4">已启用 Provider</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <template x-for="p in providerConfigs.filter(c => c.status === 1)" :key="p.id">
+                                <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                    <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                                    <span class="font-medium" x-text="p.name"></span>
+                                </div>
+                            </template>
+                            <template x-if="providerConfigs.filter(c => c.status === 1).length === 0">
+                                <div class="col-span-4 text-center text-gray-500 py-8">暂无已启用的 Provider，<a href="#" @click.prevent="page='providers'" class="text-indigo-600">点击配置</a></div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Providers Page -->
+                <div x-show="page === 'providers'" x-cloak>
+                    <div class="bg-white rounded-xl shadow-sm">
+                        <div class="p-6 border-b flex items-center justify-between">
+                            <h3 class="text-lg font-semibold">Provider 配置</h3>
+                            <button @click="showProviderModal = true; newProvider = {name:'', type:'openai', base_url:'', api_key:'', timeout:60, models:[]}" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                添加 Provider
+                            </button>
+                        </div>
+                        <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <template x-for="p in providerConfigs" :key="p.id">
+                                <div class="border rounded-lg p-4 hover:shadow-md transition">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-3 h-3 rounded-full" :class="p.status === 1 ? 'bg-green-500' : 'bg-gray-400'"></span>
+                                            <h4 class="font-semibold" x-text="p.name"></h4>
+                                        </div>
+                                        <span class="px-2 py-0.5 text-xs rounded bg-indigo-100 text-indigo-700" x-text="p.type"></span>
+                                    </div>
+                                    <div class="text-sm text-gray-500 space-y-1 mb-4">
+                                        <div class="flex justify-between"><span>Base URL:</span><span class="font-mono text-xs truncate max-w-32" x-text="p.base_url || '默认'"></span></div>
+                                        <div class="flex justify-between"><span>API Key:</span><span class="font-mono text-xs" x-text="p.api_key || '未设置'"></span></div>
+                                        <div class="flex justify-between"><span>超时:</span><span x-text="p.timeout + 's'"></span></div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button @click="testProvider(p.id)" class="flex-1 px-3 py-1.5 text-sm border rounded hover:bg-gray-50">测试</button>
+                                        <button @click="toggleProvider(p)" class="flex-1 px-3 py-1.5 text-sm rounded" :class="p.status === 1 ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-green-100 text-green-700 hover:bg-green-200'" x-text="p.status === 1 ? '禁用' : '启用'"></button>
+                                        <button @click="deleteProvider(p.id)" class="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded">删除</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <template x-if="providerConfigs.length === 0">
+                            <div class="text-center text-gray-500 py-12">暂无 Provider 配置，点击上方按钮添加</div>
+                        </template>
+                    </div>
+
+                    <!-- Provider 类型说明 -->
+                    <div class="mt-6 bg-white rounded-xl shadow-sm p-6">
+                        <h3 class="text-lg font-semibold mb-4">支持的 Provider 类型</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <template x-for="t in providerTypes" :key="t.type">
+                                <div class="border rounded-lg p-4">
+                                    <h4 class="font-semibold" x-text="t.name"></h4>
+                                    <p class="text-sm text-gray-500 mt-1" x-text="t.description"></p>
+                                    <span class="inline-block mt-2 px-2 py-0.5 text-xs bg-gray-100 rounded" x-text="t.type"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Create Provider Modal -->
+                    <div x-show="showProviderModal" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4" @click.outside="showProviderModal = false">
+                            <div class="p-6 border-b"><h3 class="text-lg font-semibold">添加 Provider</h3></div>
+                            <div class="p-6 space-y-4 max-h-96 overflow-y-auto">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">名称 *</label>
+                                    <input type="text" x-model="newProvider.name" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="My OpenAI">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">类型 *</label>
+                                    <select x-model="newProvider.type" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                        <template x-for="t in providerTypes" :key="t.type"><option :value="t.type" x-text="t.name"></option></template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+                                    <input type="text" x-model="newProvider.base_url" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="留空使用默认">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                                    <input type="password" x-model="newProvider.api_key" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="sk-...">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">超时 (秒)</label>
+                                    <input type="number" x-model="newProvider.timeout" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value="60">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">模型列表 *</label>
+                                    <input type="text" x-model="newProvider.models_input" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="gpt-4o, gpt-4o-mini, gpt-3.5-turbo">
+                                    <p class="text-xs text-gray-500 mt-1">输入模型名称，多个用逗号分隔</p>
+                                </div>
+                            </div>
+                            <div class="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                                <button @click="showProviderModal = false" class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition">取消</button>
+                                <button @click="createProvider()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">创建</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Models Page -->
+                <div x-show="page === 'models'" x-cloak>
+                    <div class="bg-white rounded-xl shadow-sm">
+                        <div class="p-6 border-b"><h3 class="text-lg font-semibold">可用模型列表</h3></div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">模型 ID</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Provider</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">能力</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">上下文</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <template x-for="m in models" :key="m.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 font-medium font-mono" x-text="m.id"></td>
+                                            <td class="px-6 py-4"><span class="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full" x-text="m.provider"></span></td>
+                                            <td class="px-6 py-4"><div class="flex flex-wrap gap-1"><template x-for="cap in m.capabilities" :key="cap"><span class="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded" x-text="cap"></span></template></div></td>
+                                            <td class="px-6 py-4 text-sm text-gray-500" x-text="m.max_tokens ? formatNumber(m.max_tokens) : '-'"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <template x-if="models.length === 0"><div class="text-center text-gray-500 py-12">暂无可用模型，请先配置 Provider</div></template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Keys Page -->
+                <div x-show="page === 'apikeys'" x-cloak>
+                    <div class="bg-white rounded-xl shadow-sm">
+                        <div class="p-6 border-b flex items-center justify-between">
+                            <h3 class="text-lg font-semibold">API Keys 管理</h3>
+                            <button @click="showCreateModal = true" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                创建 API Key
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Key</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">模型权限</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Token 额度</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">限流</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <template x-for="key in apiKeys" :key="key.id">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 font-medium" x-text="key.name"></td>
+                                            <td class="px-6 py-4 text-sm text-gray-500 font-mono" x-text="key.key_prefix"></td>
+                                            <td class="px-6 py-4"><span class="px-2 py-1 text-xs rounded-full" :class="key.status === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" x-text="key.status === 1 ? '活跃' : '禁用'"></span></td>
+                                            <td class="px-6 py-4 text-sm">
+                                                <template x-if="key.allowed_models && key.allowed_models.length > 0">
+                                                    <div class="flex flex-wrap gap-1"><template x-for="m in key.allowed_models.slice(0,2)"><span class="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded" x-text="m"></span></template><span x-show="key.allowed_models.length > 2" class="text-xs text-gray-500" x-text="'+' + (key.allowed_models.length - 2)"></span></div>
+                                                </template>
+                                                <template x-if="!key.allowed_models || key.allowed_models.length === 0">
+                                                    <span class="text-gray-400">全部</span>
+                                                </template>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm">
+                                                <template x-if="key.token_quota > 0">
+                                                    <div>
+                                                        <div class="text-xs text-gray-500">{{formatNumber(key.used_tokens)}}/{{formatNumber(key.token_quota)}}</div>
+                                                        <div class="w-20 h-1.5 bg-gray-200 rounded mt-1"><div class="h-full rounded" :class="key.used_tokens/key.token_quota > 0.8 ? 'bg-red-500' : 'bg-green-500'" :style="'width:' + Math.min(100, key.used_tokens/key.token_quota*100) + '%'"></div></div>
+                                                    </div>
+                                                </template>
+                                                <template x-if="!key.token_quota || key.token_quota <= 0">
+                                                    <span class="text-gray-400">无限</span>
+                                                </template>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-gray-500" x-text="key.rate_limit ? key.rate_limit + '/s' : '-'"></td>
+                                            <td class="px-6 py-4">
+                                                <div class="flex items-center gap-2">
+                                                    <button @click="editKey(key)" class="text-gray-600 hover:text-indigo-600" title="编辑"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                                                    <button @click="toggleKeyStatus(key)" class="text-gray-600 hover:text-orange-600" title="切换状态"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"/></svg></button>
+                                                    <button @click="deleteKey(key.id)" class="text-gray-600 hover:text-red-600" title="删除"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <template x-if="apiKeys.length === 0"><div class="text-center text-gray-500 py-12">暂无 API Key</div></template>
+                        </div>
+                    </div>
+
+                    <!-- Create API Key Modal -->
+                    <div x-show="showCreateModal" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4" @click.outside="showCreateModal = false">
+                            <div class="p-6 border-b"><h3 class="text-lg font-semibold">创建 API Key</h3></div>
+                            <div class="p-6 space-y-4 max-h-96 overflow-y-auto">
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">名称 *</label><input type="text" x-model="newKey.name" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Production Key"></div>
+                                
+                                <div class="border-t pt-4"><p class="text-sm font-medium text-gray-700 mb-2">模型权限</p>
+                                    <div class="flex flex-wrap gap-2 mb-2">
+                                        <template x-for="m in models" :key="m.id">
+                                            <label class="flex items-center gap-1 px-2 py-1 border rounded cursor-pointer hover:bg-gray-50" :class="newKey.allowed_models.includes(m.id) ? 'border-indigo-500 bg-indigo-50' : ''">
+                                                <input type="checkbox" :value="m.id" x-model="newKey.allowed_models" class="hidden">
+                                                <span class="text-sm" x-text="m.id"></span>
+                                            </label>
+                                        </template>
+                                    </div>
+                                    <p class="text-xs text-gray-500">不选择则允许访问所有模型</p>
+                                </div>
+                                
+                                <div class="border-t pt-4 grid grid-cols-2 gap-4">
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Token 总额度</label><input type="number" x-model="newKey.token_quota" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="0 = 无限"></div>
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每日 Token 额度</label><input type="number" x-model="newKey.daily_token_quota" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="0 = 无限"></div>
+                                </div>
+                                
+                                <div class="border-t pt-4 grid grid-cols-2 gap-4">
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每秒请求数 (RPS)</label><input type="number" x-model="newKey.rate_limit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="0 = 无限"></div>
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每日请求限制</label><input type="number" x-model="newKey.daily_limit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="0 = 无限"></div>
+                                </div>
+                            </div>
+                            <div class="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                                <button @click="showCreateModal = false" class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition">取消</button>
+                                <button @click="createApiKey()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">创建</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Edit API Key Modal -->
+                    <div x-show="showEditModal" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4" @click.outside="showEditModal = false">
+                            <div class="p-6 border-b"><h3 class="text-lg font-semibold">编辑 API Key</h3></div>
+                            <div class="p-6 space-y-4 max-h-96 overflow-y-auto">
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">名称</label><input type="text" x-model="editingKey.name" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                
+                                <div class="border-t pt-4"><p class="text-sm font-medium text-gray-700 mb-2">模型权限</p>
+                                    <div class="flex flex-wrap gap-2 mb-2">
+                                        <template x-for="m in models" :key="m.id">
+                                            <label class="flex items-center gap-1 px-2 py-1 border rounded cursor-pointer hover:bg-gray-50" :class="editingKey.allowed_models?.includes(m.id) ? 'border-indigo-500 bg-indigo-50' : ''">
+                                                <input type="checkbox" :value="m.id" x-model="editingKey.allowed_models" class="hidden">
+                                                <span class="text-sm" x-text="m.id"></span>
+                                            </label>
+                                        </template>
+                                    </div>
+                                </div>
+                                
+                                <div class="border-t pt-4 grid grid-cols-2 gap-4">
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Token 总额度</label><input type="number" x-model="editingKey.token_quota" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每日 Token 额度</label><input type="number" x-model="editingKey.daily_token_quota" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                </div>
+                                
+                                <div class="border-t pt-4 grid grid-cols-2 gap-4">
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每秒请求数 (RPS)</label><input type="number" x-model="editingKey.rate_limit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                    <div><label class="block text-sm font-medium text-gray-700 mb-1">每日请求限制</label><input type="number" x-model="editingKey.daily_limit" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></div>
+                                </div>
+                                
+                                <div class="border-t pt-4">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" x-model="editingKey.reset_used_tokens" class="rounded text-indigo-600">
+                                        <span class="text-sm text-gray-700">重置已使用 Token 计数</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                                <button @click="showEditModal = false" class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition">取消</button>
+                                <button @click="updateApiKey()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">保存</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Show Key Modal -->
+                    <div x-show="showKeyModal" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+                            <div class="p-6 border-b"><h3 class="text-lg font-semibold text-green-600">API Key 创建成功！</h3></div>
+                            <div class="p-6"><p class="text-sm text-gray-600 mb-4">请保存以下 API Key，它只会显示一次：</p><div class="bg-gray-100 p-4 rounded-lg font-mono text-sm break-all" x-text="createdKey"></div></div>
+                            <div class="p-6 border-t bg-gray-50 flex justify-end rounded-b-xl"><button @click="showKeyModal = false; loadApiKeys()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">我已保存</button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                page: 'dashboard',
+                info: { version: '', providers: [], factories: [] },
+                health: { status: 'unknown' },
+                stats: {},
+                apiKeys: [],
+                models: [],
+                providerConfigs: [],
+                providerTypes: [],
+                showCreateModal: false,
+                showKeyModal: false,
+                showProviderModal: false,
+                createdKey: '',
+                newKey: { name: '', rate_limit: 0, daily_limit: 0, token_quota: 0, daily_token_quota: 0, allowed_models: [] },
+                editingKey: {},
+                showEditModal: false,
+                newProvider: { name: '', type: 'openai', base_url: '', api_key: '', timeout: 60, models_input: '' },
+                adminKey: localStorage.getItem('adminKey') || '',
+                tokenChart: null,
+                statusChart: null,
+
+                get pageTitle() {
+                    return { 'dashboard': 'Dashboard', 'apikeys': 'API Keys', 'providers': 'Providers', 'models': 'Models' }[this.page] || 'Dashboard';
+                },
+
+                get successRate() {
+                    if (!this.stats.total_requests) return '100';
+                    return ((this.stats.success_requests / this.stats.total_requests) * 100).toFixed(1);
+                },
+
+                async init() {
+                    await this.loadInfo();
+                    await this.loadHealth();
+                    await this.loadStats();
+                    await this.loadProviderTypes();
+                    await this.loadProviders();
+                    await this.loadModels();
+                    this.initCharts();
+                },
+
+                async refreshData() {
+                    await this.loadStats();
+                    await this.loadHealth();
+                    await this.loadProviders();
+                    await this.loadModels();
+                    this.updateCharts();
+                },
+
+                async loadInfo() { try { const res = await fetch('/info'); this.info = await res.json(); } catch (e) { console.error(e); } },
+                async loadHealth() { try { const res = await fetch('/health'); this.health = await res.json(); } catch (e) { this.health = { status: 'error' }; } },
+                async loadStats() { try { const res = await fetch('/v1/stats'); this.stats = await res.json(); } catch (e) { console.error(e); } },
+                async loadModels() { try { const res = await fetch('/v1/models'); const data = await res.json(); this.models = data.data || []; } catch (e) { console.error(e); } },
+
+                async loadProviderTypes() {
+                    try {
+                        const res = await fetch('/admin/providers/types', { headers: this.getAdminHeaders() });
+                        if (res.ok) { const data = await res.json(); this.providerTypes = data.types || []; }
+                    } catch (e) { console.error(e); }
+                },
+
+                async loadProviders() {
+                    try {
+                        const res = await fetch('/admin/providers', { headers: this.getAdminHeaders() });
+                        if (res.ok) { const data = await res.json(); this.providerConfigs = data.data || []; }
+                    } catch (e) { console.error(e); }
+                },
+
+                async createProvider() {
+                    if (!this.newProvider.name || !this.newProvider.type) { alert('请填写名称和类型'); return; }
+                    if (!this.newProvider.models_input || !this.newProvider.models_input.trim()) { alert('请填写模型列表'); return; }
+                    
+                    // 解析模型列表
+                    const models = this.newProvider.models_input.split(',').map(m => m.trim()).filter(m => m);
+                    if (models.length === 0) { alert('请填写至少一个模型'); return; }
+                    
+                    const payload = {
+                        name: this.newProvider.name,
+                        type: this.newProvider.type,
+                        base_url: this.newProvider.base_url,
+                        api_key: this.newProvider.api_key,
+                        timeout: parseInt(this.newProvider.timeout) || 60,
+                        models: models
+                    };
+                    
+                    try {
+                        const res = await fetch('/admin/providers', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...this.getAdminHeaders() },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                            this.showProviderModal = false;
+                            this.newProvider = { name: '', type: 'openai', base_url: '', api_key: '', timeout: 60, models_input: '' };
+                            await this.loadProviders();
+                            await this.loadModels();
+                            alert('创建成功！');
+                        }
+                        else { alert('创建失败：' + (data.error?.message || '未知错误')); }
+                    } catch (e) { alert('创建失败：' + e.message); }
+                },
+
+                async toggleProvider(p) {
+                    try {
+                        await fetch(`/admin/providers/${p.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json', ...this.getAdminHeaders() },
+                            body: JSON.stringify({ status: p.status === 1 ? 0 : 1 })
+                        });
+                        await this.loadProviders();
+                        await this.loadModels();
+                    } catch (e) { alert('操作失败：' + e.message); }
+                },
+
+                async testProvider(id) {
+                    try {
+                        const res = await fetch(`/admin/providers/${id}/test`, { method: 'POST', headers: this.getAdminHeaders() });
+                        const data = await res.json();
+                        alert(data.status === 'ok' ? `连接成功！可用模型数: ${data.models}` : `连接失败: ${data.message}`);
+                    } catch (e) { alert('测试失败：' + e.message); }
+                },
+
+                async deleteProvider(id) {
+                    if (!confirm('确定要删除这个 Provider 吗？')) return;
+                    try {
+                        await fetch(`/admin/providers/${id}`, { method: 'DELETE', headers: this.getAdminHeaders() });
+                        await this.loadProviders();
+                        await this.loadModels();
+                    } catch (e) { alert('删除失败：' + e.message); }
+                },
+
+                async loadApiKeys() {
+                    if (!this.adminKey) {
+                        this.adminKey = prompt('请输入管理员密钥：');
+                        if (this.adminKey) localStorage.setItem('adminKey', this.adminKey); else return;
+                    }
+                    try {
+                        const res = await fetch('/admin/api-keys', { headers: this.getAdminHeaders() });
+                        if (res.status === 401) { this.adminKey = ''; localStorage.removeItem('adminKey'); alert('管理员密钥无效'); return; }
+                        const data = await res.json();
+                        this.apiKeys = data.data || [];
+                    } catch (e) { console.error(e); }
+                },
+
+                async createApiKey() {
+                    if (!this.newKey.name) { alert('请输入名称'); return; }
+                    try {
+                        const res = await fetch('/admin/api-keys', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', ...this.getAdminHeaders() },
+                            body: JSON.stringify({
+                                name: this.newKey.name,
+                                rate_limit: parseInt(this.newKey.rate_limit) || 0,
+                                daily_limit: parseInt(this.newKey.daily_limit) || 0,
+                                token_quota: parseInt(this.newKey.token_quota) || 0,
+                                daily_token_quota: parseInt(this.newKey.daily_token_quota) || 0,
+                                allowed_models: this.newKey.allowed_models.length > 0 ? this.newKey.allowed_models : null
+                            })
+                        });
+                        const data = await res.json();
+                        if (data.key) {
+                            this.createdKey = data.key;
+                            this.showCreateModal = false;
+                            this.showKeyModal = true;
+                            this.newKey = { name: '', rate_limit: 0, daily_limit: 0, token_quota: 0, daily_token_quota: 0, allowed_models: [] };
+                        } else {
+                            alert('创建失败：' + (data.error?.message || '未知错误'));
+                        }
+                    } catch (e) { alert('创建失败：' + e.message); }
+                },
+
+                editKey(key) {
+                    this.editingKey = {
+                        id: key.id,
+                        name: key.name,
+                        rate_limit: key.rate_limit || 0,
+                        daily_limit: key.daily_limit || 0,
+                        token_quota: key.token_quota || 0,
+                        daily_token_quota: key.daily_token_quota || 0,
+                        allowed_models: key.allowed_models || [],
+                        reset_used_tokens: false
+                    };
+                    this.showEditModal = true;
+                },
+
+                async updateApiKey() {
+                    try {
+                        const res = await fetch(`/admin/api-keys/${this.editingKey.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json', ...this.getAdminHeaders() },
+                            body: JSON.stringify({
+                                name: this.editingKey.name,
+                                rate_limit: parseInt(this.editingKey.rate_limit) || 0,
+                                daily_limit: parseInt(this.editingKey.daily_limit) || 0,
+                                token_quota: parseInt(this.editingKey.token_quota) || 0,
+                                daily_token_quota: parseInt(this.editingKey.daily_token_quota) || 0,
+                                allowed_models: this.editingKey.allowed_models.length > 0 ? this.editingKey.allowed_models : null,
+                                reset_used_tokens: this.editingKey.reset_used_tokens
+                            })
+                        });
+                        if (res.ok) {
+                            this.showEditModal = false;
+                            await this.loadApiKeys();
+                        } else {
+                            const data = await res.json();
+                            alert('更新失败：' + (data.error?.message || '未知错误'));
+                        }
+                    } catch (e) { alert('更新失败：' + e.message); }
+                },
+
+                async toggleKeyStatus(key) {
+                    try {
+                        await fetch(`/admin/api-keys/${key.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...this.getAdminHeaders() }, body: JSON.stringify({ status: key.status === 1 ? 0 : 1 }) });
+                        await this.loadApiKeys();
+                    } catch (e) { alert('操作失败：' + e.message); }
+                },
+
+                async deleteKey(id) {
+                    if (!confirm('确定要删除这个 API Key 吗？')) return;
+                    try { await fetch(`/admin/api-keys/${id}`, { method: 'DELETE', headers: this.getAdminHeaders() }); await this.loadApiKeys(); } catch (e) { alert('删除失败：' + e.message); }
+                },
+
+                getAdminHeaders() { return this.adminKey ? { 'X-Admin-Key': this.adminKey } : {}; },
+
+                initCharts() {
+                    const tokenCtx = document.getElementById('tokenChart');
+                    if (tokenCtx) {
+                        this.tokenChart = new Chart(tokenCtx, {
+                            type: 'doughnut',
+                            data: { labels: ['Prompt', 'Completion'], datasets: [{ data: [this.stats.prompt_tokens || 0, this.stats.completion_tokens || 0], backgroundColor: ['#6366f1', '#22c55e'], borderWidth: 0 }] },
+                            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+                        });
+                    }
+                    const statusCtx = document.getElementById('statusChart');
+                    if (statusCtx) {
+                        this.statusChart = new Chart(statusCtx, {
+                            type: 'doughnut',
+                            data: { labels: ['成功', '失败'], datasets: [{ data: [this.stats.success_requests || 0, this.stats.failed_requests || 0], backgroundColor: ['#22c55e', '#ef4444'], borderWidth: 0 }] },
+                            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+                        });
+                    }
+                },
+
+                updateCharts() {
+                    if (this.tokenChart) { this.tokenChart.data.datasets[0].data = [this.stats.prompt_tokens || 0, this.stats.completion_tokens || 0]; this.tokenChart.update(); }
+                    if (this.statusChart) { this.statusChart.data.datasets[0].data = [this.stats.success_requests || 0, this.stats.failed_requests || 0]; this.statusChart.update(); }
+                },
+
+                formatNumber(num) { if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M'; if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K'; return num.toString(); },
+                formatLatency(ns) { if (!ns) return '0ms'; const ms = ns / 1e6; return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : ms.toFixed(0) + 'ms'; },
+                formatDate(d) { return d ? new Date(d).toLocaleString('zh-CN') : '-'; }
+            };
+        }
+    </script>
+</body>
+</html>
