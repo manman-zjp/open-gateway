@@ -1,0 +1,88 @@
+# AI Gateway 配置文件示例
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+# 日志配置
+log:
+  level: "info"          # debug, info, warn, error
+  format: "console"      # json, console
+  output_path: "stdout"  # stdout 或文件路径
+
+# 存储配置（用于持久化统计数据）
+storage:
+  type: "sqlite"         # sqlite, mysql, postgres, clickhouse
+  dsn: "gateway.db"
+  max_conns: 10
+  max_idle: 5
+  lifetime: 1h
+
+# 缓存配置
+cache:
+  type: "memory"         # memory, redis
+  addr: "localhost:6379" # Redis地址（仅redis类型需要）
+  password: ""
+  db: 0
+  pool_size: 10
+  ttl: 5m
+
+# 模型提供商配置
+provider:
+  # OpenAI配置示例
+  openai:
+    enabled: false
+    base_url: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"  # 支持环境变量
+    timeout: 60s
+    models:
+      - gpt-4
+      - gpt-4-turbo
+      - gpt-3.5-turbo
+
+  # Anthropic Claude配置示例
+  anthropic:
+    enabled: false
+    base_url: "https://api.anthropic.com/v1"
+    api_key: "${ANTHROPIC_API_KEY}"
+    timeout: 60s
+    models:
+      - claude-3-opus
+      - claude-3-sonnet
+      - claude-3-haiku
+
+  # 阿里通义千问配置示例
+  dashscope:
+    enabled: false
+    base_url: "https://dashscope.aliyuncs.com/api/v1"
+    api_key: "${DASHSCOPE_API_KEY}"
+    timeout: 60s
+    models:
+      - qwen-turbo
+      - qwen-plus
+      - qwen-max
+
+  # 本地Ollama配置示例
+  ollama:
+    enabled: false
+    base_url: "http://localhost:11434"
+    api_key: ""
+    timeout: 120s
+    models:
+      - llama2
+      - mistral
+      - codellama
+
+  # 自定义OpenAI兼容服务
+  custom:
+    enabled: false
+    base_url: "http://localhost:8000/v1"
+    api_key: ""
+    timeout: 60s
+    models: []
+    extra:
+      custom_header: "value"
