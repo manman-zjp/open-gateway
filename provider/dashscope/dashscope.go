@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"gateway/model"
+	"gateway/pkg/circuitbreaker"
+	"gateway/pkg/httpclient"
 	"gateway/provider"
 )
 
@@ -27,6 +29,7 @@ type Provider struct {
 	client  *http.Client
 	baseURL string
 	apiKey  string
+	cb      *circuitbreaker.CircuitBreaker
 }
 
 // New 创建通义千问提供商
@@ -42,6 +45,11 @@ func New(cfg *provider.Config) (provider.Provider, error) {
 		timeout = cfg.Timeout
 	}
 
+	providerName := cfg.Name
+	if providerName == "" {
+		providerName = "dashscope"
+	}
+
 	p := &Provider{
 		BaseProvider: provider.NewBaseProvider("dashscope", cfg, []provider.Capability{
 			provider.CapabilityChat,
@@ -49,11 +57,10 @@ func New(cfg *provider.Config) (provider.Provider, error) {
 			provider.CapabilityEmbedding,
 			provider.CapabilityTools,
 		}),
-		client: &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		},
+		client:  httpclient.GetPool().Get(providerName, time.Duration(timeout)*time.Second),
 		baseURL: baseURL,
 		apiKey:  cfg.APIKey,
+		cb:      circuitbreaker.GetManager().Get(providerName),
 	}
 
 	p.initModels(cfg.Models)
@@ -76,6 +83,10 @@ func (p *Provider) initModels(configModels []string) {
 
 // ChatCompletion 聊天补全（兼容 OpenAI 格式）
 func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletionRequest) (*model.ChatCompletionResponse, error) {
+	if err := p.cb.Allow(); err != nil {
+		return nil, fmt.Errorf("circuit breaker: %w", err)
+	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -90,19 +101,23 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletion
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		p.cb.Failure()
 		return nil, p.handleError(resp)
 	}
 
 	var result model.ChatCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
+	p.cb.Success()
 	return &result, nil
 }
 

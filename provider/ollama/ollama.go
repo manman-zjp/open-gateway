@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"gateway/model"
+	"gateway/pkg/circuitbreaker"
+	"gateway/pkg/httpclient"
 	"gateway/provider"
 )
 
@@ -24,6 +26,7 @@ type Provider struct {
 	*provider.BaseProvider
 	client  *http.Client
 	baseURL string
+	cb      *circuitbreaker.CircuitBreaker
 }
 
 // New 创建Ollama提供商
@@ -39,16 +42,20 @@ func New(cfg *provider.Config) (provider.Provider, error) {
 		timeout = cfg.Timeout
 	}
 
+	providerName := cfg.Name
+	if providerName == "" {
+		providerName = "ollama"
+	}
+
 	p := &Provider{
 		BaseProvider: provider.NewBaseProvider("ollama", cfg, []provider.Capability{
 			provider.CapabilityChat,
 			provider.CapabilityVision,
 			provider.CapabilityEmbedding,
 		}),
-		client: &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		},
+		client:  httpclient.GetPool().Get(providerName, time.Duration(timeout)*time.Second),
 		baseURL: baseURL,
+		cb:      circuitbreaker.GetManager().Get(providerName),
 	}
 
 	// 初始化模型列表
@@ -73,7 +80,10 @@ func (p *Provider) initModels(configModels []string) {
 
 // ChatCompletion 聊天补全（使用OpenAI兼容接口）
 func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletionRequest) (*model.ChatCompletionResponse, error) {
-	// Ollama支持OpenAI兼容接口
+	if err := p.cb.Allow(); err != nil {
+		return nil, fmt.Errorf("circuit breaker: %w", err)
+	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -88,19 +98,23 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletion
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		p.cb.Failure()
 		return nil, p.handleError(resp)
 	}
 
 	var result model.ChatCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
+	p.cb.Success()
 	return &result, nil
 }
 

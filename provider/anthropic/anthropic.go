@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"gateway/model"
+	"gateway/pkg/circuitbreaker"
+	"gateway/pkg/httpclient"
 	"gateway/provider"
 )
 
@@ -26,6 +28,7 @@ type Provider struct {
 	client  *http.Client
 	baseURL string
 	apiKey  string
+	cb      *circuitbreaker.CircuitBreaker
 }
 
 // New 创建Anthropic提供商
@@ -41,17 +44,21 @@ func New(cfg *provider.Config) (provider.Provider, error) {
 		timeout = cfg.Timeout
 	}
 
+	providerName := cfg.Name
+	if providerName == "" {
+		providerName = "anthropic"
+	}
+
 	p := &Provider{
 		BaseProvider: provider.NewBaseProvider("anthropic", cfg, []provider.Capability{
 			provider.CapabilityChat,
 			provider.CapabilityVision,
 			provider.CapabilityTools,
 		}),
-		client: &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		},
+		client:  httpclient.GetPool().Get(providerName, time.Duration(timeout)*time.Second),
 		baseURL: baseURL,
 		apiKey:  cfg.APIKey,
+		cb:      circuitbreaker.GetManager().Get(providerName),
 	}
 
 	p.initModels(cfg.Models)
@@ -74,6 +81,10 @@ func (p *Provider) initModels(configModels []string) {
 
 // ChatCompletion 聊天补全（转换协议）
 func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletionRequest) (*model.ChatCompletionResponse, error) {
+	if err := p.cb.Allow(); err != nil {
+		return nil, fmt.Errorf("circuit breaker: %w", err)
+	}
+
 	claudeReq := p.convertRequest(req)
 
 	body, err := json.Marshal(claudeReq)
@@ -90,19 +101,23 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *model.ChatCompletion
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		p.cb.Failure()
 		return nil, p.handleError(resp)
 	}
 
 	var claudeResp ClaudeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&claudeResp); err != nil {
+		p.cb.Failure()
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
+	p.cb.Success()
 	return p.convertResponse(&claudeResp, req.Model), nil
 }
 
